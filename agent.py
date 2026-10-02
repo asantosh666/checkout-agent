@@ -27,6 +27,10 @@ Rules:
   pick 2-4 products that fit the theme and stay under the budget, then create ONE order with
   create_paypal_order using comma-separated ids (e.g. "p01,p05,p06"). One order, one payment.
 - After creating the order (create_paypal_order), tell the user to approve it with the PayPal button/link. The order is NOT paid until they approve and it is captured.
+- ORDER TRACKING: if the user asks about their order ("where's my order?", "did my payment go through?"),
+  call check_order_status. "My order" means their most recent order from the session context below.
+  Report the status in plain words: CREATED = waiting for their approval, APPROVED = approved and will be
+  captured, COMPLETED = paid. Never claim money moved unless status is COMPLETED.
 - Keep replies short and chatty, like a helpful store clerk. Prices in USD.
 """
 
@@ -98,9 +102,18 @@ class ShoppingAgent:
 
         @tool
         def check_order_status(order_id: str) -> str:
-            """Check the current status of a PayPal order."""
+            """Check the current status of a PayPal order. Use when the user
+            asks 'where is my order?' or 'did my payment go through?'."""
             order = self.paypal.get_order(order_id)
-            return json.dumps({"order_id": order["id"], "status": order["status"]})
+            pu = (order.get("purchase_units") or [{}])[0]
+            amount = pu.get("amount") or {}
+            return json.dumps({
+                "order_id": order["id"],
+                "status": order["status"],
+                "amount": amount.get("value"),
+                "currency": amount.get("currency_code"),
+                "description": pu.get("description"),
+            })
 
         @tool
         def capture_paypal_order(order_id: str) -> str:
@@ -121,9 +134,16 @@ class ShoppingAgent:
         self._tool_map = {t.name: t for t in self._tools}
         self._llm_tools = self.llm.bind_tools(self._tools)
 
-    def chat(self, history: list, user_text: str) -> tuple[str, dict | None, list]:
+    def chat(self, history: list, user_text: str,
+             recent_orders: list | None = None) -> tuple[str, dict | None, list]:
         """One turn. Returns (reply_text, order_info|None, updated_history)."""
-        messages = [SystemMessage(content=SYSTEM_PROMPT), *history,
+        ctx = ""
+        if recent_orders:
+            lines = [f"- {o['order_id']}: {o.get('product', '')} "
+                     f"(${o.get('amount', '')})" for o in recent_orders[-3:]]
+            ctx = ("\n\nSession's recent orders, newest last "
+                   "(use for 'my order' questions):\n" + "\n".join(lines))
+        messages = [SystemMessage(content=SYSTEM_PROMPT + ctx), *history,
                     HumanMessage(content=user_text)]
         order_info = None
         for _ in range(8):  # max tool rounds per turn

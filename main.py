@@ -41,7 +41,8 @@ from paypal_client import PayPalClient, PayPalError
 load_dotenv()
 
 BASE_DIR = os.path.dirname(__file__)
-APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:8000")
+APP_BASE_URL = (os.environ.get("APP_BASE_URL")
+               or os.environ.get("RENDER_EXTERNAL_URL", "http://localhost:8000"))
 SANDBOX = os.environ.get("PAYPAL_SANDBOX", "true").lower() != "false"
 
 paypal = PayPalClient(
@@ -59,8 +60,8 @@ agent = ShoppingAgent(
 app = FastAPI(title="Checkout Agent")
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
-# session_id -> {"history": [...], "receipts": {order_id: {...}}}
-_sessions: dict = defaultdict(lambda: {"history": [], "receipts": {}})
+# session_id -> {"history": [...], "receipts": {order_id: {...}}, "orders": [...]}
+_sessions: dict = defaultdict(lambda: {"history": [], "receipts": {}, "orders": []})
 
 
 @app.get("/")
@@ -82,10 +83,17 @@ async def chat(req: Request):
         return JSONResponse({"error": "empty message"}, status_code=400)
     sess = _sessions[session_id]
     try:
-        reply, order_info, new_history = agent.chat(sess["history"], message)
+        reply, order_info, new_history = agent.chat(
+            sess["history"], message, sess["orders"])
     except Exception as e:
         return JSONResponse({"error": f"agent error: {str(e)[:200]}"}, status_code=500)
     sess["history"] = new_history[-30:]  # keep memory bounded
+    if order_info and order_info.get("order_id"):
+        sess["orders"].append({
+            "order_id": order_info["order_id"],
+            "product": order_info.get("product", ""),
+            "amount": order_info.get("amount", ""),
+        })
     return {"session_id": session_id, "reply": reply, "order": order_info}
 
 

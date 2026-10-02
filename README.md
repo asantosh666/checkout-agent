@@ -19,6 +19,7 @@ You ──chat──▶ Gemini agent ──tools──▶ catalog search
 - **Payments:** PayPal Orders v2, `intent=CAPTURE`. Orders are created **and** captured server-side — the browser never sees secrets or amounts.
 - **Catalog:** a static 12-product JSON (fast, deterministic demo). Swap in any product API later.
 - **UI:** single-page chat, no build step.
+- **Order tracking:** ask *"where's my order?"* anytime — the agent looks up the live PayPal status and explains it in plain words. The human approval step is deliberate: the agent can spend, but only with your okay.
 
 ## Run it (judges start here)
 

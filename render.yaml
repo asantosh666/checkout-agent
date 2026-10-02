@@ -1,0 +1,20 @@
+# Render Blueprint — one-click deploy of Checkout Agent.
+# In Render: New → Blueprint → pick this repo. Then set the three secret
+# env vars below in the dashboard (never commit them).
+services:
+  - type: web
+    name: checkout-agent
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PAYPAL_SANDBOX
+        value: "true"
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+    # APP_BASE_URL is auto-detected from Render's RENDER_EXTERNAL_URL,
+    # so PayPal return/cancel URLs work with zero extra config.
