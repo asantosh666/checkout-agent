@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout Agent — AI shopping with PayPal</title>
+<style>
+  :root { --pp-blue:#003087; --pp-teal:#00b2a9; --bg:#f5f7fa; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,system-ui,"Segoe UI",Roboto,sans-serif;
+         background:var(--bg); display:flex; flex-direction:column; height:100vh; }
+  header { background:var(--pp-blue); color:#fff; padding:14px 20px; display:flex;
+           align-items:center; gap:12px; }
+  header .logo { font-size:22px; font-weight:800; }
+  header .tag { font-size:12px; opacity:.75; }
+  #chat { flex:1; overflow-y:auto; padding:20px; max-width:720px; width:100%; margin:0 auto; }
+  .msg { margin:10px 0; padding:12px 16px; border-radius:16px; max-width:80%; line-height:1.45; }
+  .user { background:var(--pp-blue); color:#fff; margin-left:auto; border-bottom-right-radius:4px; }
+  .bot  { background:#fff; border:1px solid #e2e6ea; border-bottom-left-radius:4px; }
+  .bot.typing { color:#888; font-style:italic; }
+  .paybox { background:#fff; border:2px solid var(--pp-teal); border-radius:12px;
+            padding:14px 16px; margin:10px 0; max-width:80%; }
+  .paybox .amount { font-size:20px; font-weight:700; }
+  .paybox a.btn { display:inline-block; margin-top:10px; background:#ffc439; color:#111;
+                  font-weight:700; text-decoration:none; padding:12px 28px; border-radius:24px; }
+  .receipt { background:#e8f8f5; border:2px solid #1abc9c; border-radius:12px;
+             padding:14px 16px; margin:10px 0; max-width:80%; }
+  .receipt h3 { margin:0 0 8px; color:#0e7c61; }
+  #bar { display:flex; gap:10px; padding:14px 20px; background:#fff;
+         border-top:1px solid #e2e6ea; max-width:720px; width:100%; margin:0 auto; }
+  #input { flex:1; padding:12px 16px; border:1px solid #ccd2d8; border-radius:24px; font-size:15px; }
+  #send { background:var(--pp-blue); color:#fff; border:none; border-radius:24px;
+          padding:12px 24px; font-size:15px; cursor:pointer; }
+  #send:disabled { opacity:.5; }
+  .note { text-align:center; font-size:12px; color:#888; padding:6px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🛒 Checkout Agent</div>
+  <div class="tag">AI shopping assistant · pays with PayPal (sandbox)</div>
+</header>
+<div id="chat"></div>
+<div id="bar">
+  <input id="input" placeholder="Try: find me wireless earbuds under $60" autocomplete="off">
+  <button id="send">Send</button>
+</div>
+<div class="note" id="mode"></div>
+
+<script>
+const chat = document.getElementById('chat');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+let sessionId = localStorage.getItem('ca_session') || '';
+if (sessionId) { /* resume */ } else { sessionId = ''; }
+
+fetch('/api/config').then(r=>r.json()).then(c=>{
+  document.getElementById('mode').textContent =
+    c.sandbox ? 'Sandbox mode — no real money moves.' : 'LIVE mode';
+});
+
+function addMsg(text, cls){
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls;
+  d.textContent = text;
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+  return d;
+}
+function addPayBox(order){
+  const d = document.createElement('div');
+  d.className = 'paybox';
+  d.innerHTML = `<div><strong>${order.product}</strong></div>
+    <div class="amount">$${order.amount} USD</div>
+    <div style="font-size:13px;color:#666">Order ${order.order_id} · awaiting approval</div>
+    <a class="btn" href="${order.approval_url}" target="_blank" rel="noopener">Approve with PayPal</a>`;
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+}
+function addReceipt(r){
+  const d = document.createElement('div');
+  d.className = 'receipt';
+  d.innerHTML = `<h3>✅ Payment captured</h3>
+    <div>${r.description || ''}</div>
+    <div><strong>$${r.amount} ${r.currency}</strong></div>
+    <div style="font-size:12px;color:#666">Order ${r.order_id}<br>Capture ${r.capture_id}</div>`;
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function send(){
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addMsg(text, 'user');
+  const t = addMsg('…', 'bot typing');
+  sendBtn.disabled = true;
+  try {
+    const res = await fetch('/api/chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message:text, session_id:sessionId})
+    });
+    const data = await res.json();
+    t.remove();
+    if (data.error) { addMsg('Error: ' + data.error, 'bot'); }
+    else {
+      sessionId = data.session_id;
+      localStorage.setItem('ca_session', sessionId);
+      addMsg(data.reply, 'bot');
+      if (data.order && data.order.approval_url) addPayBox(data.order);
+    }
+  } catch(e){ t.remove(); addMsg('Network error — is the server running?', 'bot'); }
+  sendBtn.disabled = false;
+  input.focus();
+}
+sendBtn.onclick = send;
+input.onkeydown = e => { if (e.key === 'Enter') send(); };
+
+// handle return from PayPal (?receipt= / ?cancelled= / ?error=)
+const q = new URLSearchParams(location.search);
+if (q.get('receipt')) {
+  addMsg('Back from PayPal — fetching your receipt…', 'bot');
+  fetch('/api/orders/' + q.get('receipt')).then(r=>r.json()).then(r=>{
+    if (r.capture_id) addReceipt(r);
+    else addMsg('Order status: ' + (r.status || 'unknown'), 'bot');
+  });
+  history.replaceState({}, '', '/');
+} else if (q.get('cancelled')) {
+  addMsg('Payment cancelled — no charge made. Want to try something else?', 'bot');
+  history.replaceState({}, '', '/');
+} else if (q.get('error')) {
+  addMsg('Something went wrong: ' + q.get('error'), 'bot');
+  history.replaceState({}, '', '/');
+} else {
+  addMsg("Hi! I'm your AI shopping assistant. Tell me what you're looking for — e.g. “wireless earbuds under $60” — and I'll find it and check out with PayPal.", 'bot');
+}
+</script>
+</body>
+</html>
