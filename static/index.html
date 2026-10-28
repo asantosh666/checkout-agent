@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Checkout Agent — AI shopping with PayPal</title>
+<!-- AG Grid Community (MIT) via CDN, pinned version; renders the catalog browser below -->
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@36.2.0/dist/ag-grid-community.min.js"></script>
 <style>
   :root { --pp-blue:#003087; --pp-teal:#00b2a9; --bg:#f5f7fa; }
   * { box-sizing:border-box; }
@@ -37,13 +39,23 @@
           padding:12px 24px; font-size:15px; cursor:pointer; }
   #send:disabled { opacity:.5; }
   .note { text-align:center; font-size:12px; color:#888; padding:6px; }
+  #browseBtn { margin-left:auto; background:#fff; color:var(--pp-blue); border:none;
+         border-radius:20px; padding:8px 18px; font-size:14px; font-weight:700; cursor:pointer; }
+  #gridWrap { max-width:720px; width:100%; margin:0 auto; padding:0 20px 10px; display:none; }
+  #gridBar { font-size:13px; color:#555; padding:8px 0; }
+  #catalogGrid { height:360px; width:100%; }
 </style>
 </head>
 <body>
 <header>
   <div class="logo">🛒 Checkout Agent</div>
   <div class="tag">AI shopping assistant · pays with PayPal (sandbox)</div>
+  <button id="browseBtn">Browse catalog</button>
 </header>
+<div id="gridWrap">
+  <div id="gridBar">Sort or filter the catalog, then click a product to start a chat about it.</div>
+  <div id="catalogGrid" class="ag-theme-quartz"></div>
+</div>
 <div id="chat"></div>
 <div id="bar">
   <input id="input" placeholder="Try: find me wireless earbuds under $60" autocomplete="off">
@@ -128,6 +140,48 @@ async function send(){
 }
 sendBtn.onclick = send;
 input.onkeydown = e => { if (e.key === 'Enter') send(); };
+
+// Catalog browser (AG Grid Community). Lazy: built on first open, so the
+// chat never depends on the grid CDN. Clicking a row prefills the chat.
+const browseBtn = document.getElementById('browseBtn');
+const gridWrap = document.getElementById('gridWrap');
+let gridBuilt = false;
+let gridOpen = false;
+async function toggleGrid(){
+  gridOpen = !gridOpen;
+  gridWrap.style.display = gridOpen ? 'block' : 'none';
+  browseBtn.textContent = gridOpen ? 'Hide catalog' : 'Browse catalog';
+  if (!gridOpen || gridBuilt) return;
+  const bar = document.getElementById('gridBar');
+  if (typeof agGrid === 'undefined') {
+    bar.textContent = 'Catalog grid could not load (AG Grid CDN unreachable) — chat still works.';
+    return;
+  }
+  try {
+    const res = await fetch('/api/catalog');
+    const data = await res.json();
+    agGrid.createGrid(document.getElementById('catalogGrid'), {
+      rowData: data.products || [],
+      columnDefs: [
+        { field: 'name', headerName: 'Product', flex: 2 },
+        { field: 'category', headerName: 'Category', flex: 1 },
+        { field: 'price', headerName: 'Price', width: 110,
+          valueFormatter: p => '$' + Number(p.value).toFixed(2) },
+        { field: 'blurb', headerName: 'Description', flex: 3, autoHeight: true,
+          cellStyle: { 'white-space': 'normal', 'line-height': '1.4' } },
+      ],
+      defaultColDef: { sortable: true, filter: true, resizable: true },
+      onRowClicked: e => {
+        input.value = 'I want the ' + e.data.name;
+        input.focus();
+      },
+    });
+    gridBuilt = true;
+  } catch(e) {
+    bar.textContent = 'Could not load the catalog — chat still works.';
+  }
+}
+browseBtn.onclick = toggleGrid;
 
 // handle return from PayPal (?receipt= / ?cancelled= / ?error=)
 const q = new URLSearchParams(location.search);

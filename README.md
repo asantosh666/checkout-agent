@@ -18,6 +18,7 @@ You ──chat──▶ Gemini agent ──tools──▶ catalog search
 - **Agent:** Google Gemini with function calling (manual tool loop, no framework magic)
 - **Payments:** PayPal Orders v2, `intent=CAPTURE`. Orders are created **and** captured server-side — the browser never sees secrets or amounts.
 - **Catalog:** a static 12-product JSON (fast, deterministic demo). Swap in any product API later.
+- **Catalog browser:** "Browse catalog" renders the same catalog in an AG Grid Community (MIT-licensed, free) grid — sort, filter, and click a row to start a chat about that product. Data comes from `GET /api/catalog`, the same source the agent searches.
 - **UI:** single-page chat, no build step.
 - **Order tracking:** ask *"where's my order?"* anytime — the agent looks up the live PayPal status and explains it in plain words. The human approval step is deliberate: the agent can spend, but only with your okay.
 
@@ -49,7 +50,8 @@ app/
   agent.py         Gemini tool-calling loop + shopping system prompt
   paypal_client.py PayPal REST client (OAuth, create/get/capture order)
   catalog.json     12-product demo catalog
-  static/index.html  chat UI
+  openapi.json     OpenAPI 3.0.3 spec for the API — import into APIMatic for a hosted developer portal
+  static/index.html  chat UI + AG Grid catalog browser
   requirements.txt
   .env.example
 ```

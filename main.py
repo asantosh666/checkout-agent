@@ -11,6 +11,7 @@ Routes:
 Run:  uvicorn main:app --port 8000
 Env:  see .env.example
 """
+import json
 import os
 import re
 
@@ -41,8 +42,11 @@ from paypal_client import PayPalClient, PayPalError
 load_dotenv()
 
 BASE_DIR = os.path.dirname(__file__)
+_hf_host = os.environ.get("SPACE_HOST", "")
 APP_BASE_URL = (os.environ.get("APP_BASE_URL")
-               or os.environ.get("RENDER_EXTERNAL_URL", "http://localhost:8000"))
+               or os.environ.get("RENDER_EXTERNAL_URL")
+               or (f"https://{_hf_host}" if _hf_host else "")
+               or "http://localhost:8000")
 SANDBOX = os.environ.get("PAYPAL_SANDBOX", "true").lower() != "false"
 
 paypal = PayPalClient(
@@ -72,6 +76,13 @@ def index():
 @app.get("/api/config")
 def config():
     return {"sandbox": SANDBOX}
+
+
+@app.get("/api/catalog")
+def catalog():
+    """The same catalog.json file the agent searches, for the AG Grid browser UI."""
+    with open(os.path.join(BASE_DIR, "catalog.json")) as f:
+        return json.load(f)
 
 
 @app.post("/api/chat")
