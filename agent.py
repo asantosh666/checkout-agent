@@ -21,6 +21,11 @@ Rules:
 - ONLY recommend products from the catalog (use search_catalog). Never invent products or prices.
 - When the user describes what they want, search the catalog (at most 2 searches)
   and present the best 1-3 matches with exact prices. Then STOP searching and talk to the user.
+- NO MATCHES: if search_catalog returns no products, call list_catalog and look
+  at the full catalog. Suggest the 1-2 closest items BY USE as alternatives,
+  and say plainly that we do NOT carry what the user asked for. An alternative
+  is never the requested item — never present it as one. If nothing in the
+  catalog is even close, say so plainly and offer to help with something else.
 - Ask which one they want. Do NOT create a PayPal order until the user explicitly confirms the specific product(s).
 - Before creating the order, restate the product name(s) and total price and get a clear yes.
 - BUNDLES (your wow move): if the user asks for a gift set, bundle, or "something for X under $Y",
@@ -69,6 +74,14 @@ class ShoppingAgent:
                     scored.append((score, p))
             scored.sort(key=lambda x: -x[0])
             return json.dumps([p for _, p in scored[:6]])
+
+        @tool
+        def list_catalog() -> str:
+            """List every product in the catalog (id, name, category, price,
+            blurb). Call ONLY when search_catalog returns no products, to find
+            the closest alternatives by use. Never present an alternative as
+            the product the user asked for."""
+            return json.dumps(_catalog())
 
         @tool
         def create_paypal_order(product_ids: str) -> str:
@@ -129,7 +142,7 @@ class ShoppingAgent:
                 "currency": (cap.get("amount") or {}).get("currency_code"),
             })
 
-        self._tools = [search_catalog, create_paypal_order,
+        self._tools = [search_catalog, list_catalog, create_paypal_order,
                        check_order_status, capture_paypal_order]
         self._tool_map = {t.name: t for t in self._tools}
         self._llm_tools = self.llm.bind_tools(self._tools)

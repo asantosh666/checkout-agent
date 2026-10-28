@@ -19,6 +19,7 @@ You ──chat──▶ Gemini agent ──tools──▶ catalog search
 - **Payments:** PayPal Orders v2, `intent=CAPTURE`. Orders are created **and** captured server-side — the browser never sees secrets or amounts.
 - **Catalog:** a static 12-product JSON (fast, deterministic demo). Swap in any product API later.
 - **Catalog browser:** "Browse catalog" renders the same catalog in an AG Grid Community (MIT-licensed, free) grid — sort, filter, and click a row to start a chat about that product. Data comes from `GET /api/catalog`, the same source the agent searches.
+- **No-match alternatives:** when a request matches nothing in the catalog, the agent says so plainly and suggests the closest items by use as labeled alternatives — never presented as the requested product.
 - **UI:** single-page chat, no build step.
 - **Order tracking:** ask *"where's my order?"* anytime — the agent looks up the live PayPal status and explains it in plain words. The human approval step is deliberate: the agent can spend, but only with your okay.
 
