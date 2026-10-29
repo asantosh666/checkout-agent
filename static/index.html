@@ -101,7 +101,43 @@ function addPayBox(order){
     <a class="btn" href="${order.approval_url}" target="_blank" rel="noopener">Approve with PayPal</a>`;
   chat.appendChild(d);
   chat.scrollTop = chat.scrollHeight;
+  saveOrder(order);
 }
+// Persisted orders: the PayPal approval opens in a NEW tab and the return
+// is a FRESH page load, so the order card from the creation tab is not in
+// the return tab's DOM. Saving orders lets the return page re-render the
+// matching card (so it can be flipped) and lets the original tab flip live
+// via the storage event below.
+function getSavedOrders(){
+  try { return JSON.parse(localStorage.getItem('ca_orders') || '[]'); }
+  catch(e){ return []; }
+}
+function saveOrders(list){
+  try { localStorage.setItem('ca_orders', JSON.stringify(list.slice(-10))); } catch(e){}
+}
+function saveOrder(order){
+  const list = getSavedOrders().filter(o => o.order_id !== order.order_id);
+  list.push({ product: order.product, amount: order.amount,
+              order_id: order.order_id, approval_url: order.approval_url,
+              captured: false });
+  saveOrders(list);
+}
+// Mark an order captured in storage AND flip its card if present on this page.
+function setOrderCaptured(orderId, r){
+  const list = getSavedOrders();
+  const o = list.find(x => x.order_id === orderId);
+  if (o) {
+    o.captured = true; o.capture_id = r.capture_id || '';
+    o.amount = r.amount || o.amount; o.currency = r.currency || o.currency;
+    saveOrders(list);
+  }
+  markOrderCaptured(orderId, r);
+}
+// Other tabs (e.g. the tab the order was created in) flip live on capture.
+window.addEventListener('storage', e => {
+  if (e.key !== 'ca_orders') return;
+  getSavedOrders().filter(o => o.captured).forEach(o => markOrderCaptured(o.order_id, o));
+});
 function addReceipt(r){
   const d = document.createElement('div');
   d.className = 'receipt';
@@ -199,13 +235,17 @@ browseBtn.onclick = toggleGrid;
 // handle return from PayPal (?receipt= / ?cancelled= / ?error=)
 const q = new URLSearchParams(location.search);
 if (q.get('receipt')) {
+  // Re-render the matching order card first: the return is a fresh page
+  // load, so without this there is no card here for the flip below.
+  const saved = getSavedOrders().find(o => o.order_id === q.get('receipt'));
+  if (saved && !saved.captured) addPayBox(saved);
   addMsg('Back from PayPal — fetching your receipt…', 'bot');
   fetch('/api/orders/' + q.get('receipt')).then(r=>r.json()).then(r=>{
     if (r.capture_id) {
       addReceipt(r);
       const amt = (r.amount && r.currency) ? ` — $${r.amount} ${r.currency}` : '';
       addMsg(`✅ Payment captured${amt}. Order ${r.order_id} is complete.`, 'bot');
-      markOrderCaptured(r.order_id, r);
+      setOrderCaptured(r.order_id, r);
     }
     else addMsg('Order status: ' + (r.status || 'unknown'), 'bot');
   });
