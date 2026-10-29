@@ -96,7 +96,7 @@ function addPayBox(order){
   d.className = 'paybox';
   d.innerHTML = `<div><strong>${order.product}</strong></div>
     <div class="amount">$${order.amount} USD</div>
-    <div style="font-size:13px;color:#666">Order ${order.order_id} · awaiting approval</div>
+    <div class="order-status" data-order-id="${order.order_id}">Order ${order.order_id} · awaiting approval</div>
     <div style="font-size:12px;color:#888;margin-top:6px">🔒 You approve on PayPal's site — the agent never sees your login.</div>
     <a class="btn" href="${order.approval_url}" target="_blank" rel="noopener">Approve with PayPal</a>`;
   chat.appendChild(d);
@@ -111,6 +111,19 @@ function addReceipt(r){
     <div style="font-size:12px;color:#666">Order ${r.order_id}<br>Capture ${r.capture_id}</div>`;
   chat.appendChild(d);
   chat.scrollTop = chat.scrollHeight;
+}
+// Flip an order card from "awaiting approval" to captured once the receipt
+// comes back, and hide its approve button (the order is already paid).
+// No-op if the card isn't on the page (e.g. fresh session) — the receipt
+// banner and chat message still show.
+function markOrderCaptured(orderId, r){
+  const el = document.querySelector(`[data-order-id="${orderId}"]`);
+  if (!el) return;
+  const amt = (r.amount && r.currency) ? ` ($${r.amount} ${r.currency})` : '';
+  el.textContent = `Order ${orderId} · ✅ captured${amt}`;
+  const box = el.closest('.paybox');
+  const btn = box ? box.querySelector('a.btn') : null;
+  if (btn) btn.style.display = 'none';
 }
 
 async function send(){
@@ -188,7 +201,12 @@ const q = new URLSearchParams(location.search);
 if (q.get('receipt')) {
   addMsg('Back from PayPal — fetching your receipt…', 'bot');
   fetch('/api/orders/' + q.get('receipt')).then(r=>r.json()).then(r=>{
-    if (r.capture_id) addReceipt(r);
+    if (r.capture_id) {
+      addReceipt(r);
+      const amt = (r.amount && r.currency) ? ` — $${r.amount} ${r.currency}` : '';
+      addMsg(`✅ Payment captured${amt}. Order ${r.order_id} is complete.`, 'bot');
+      markOrderCaptured(r.order_id, r);
+    }
     else addMsg('Order status: ' + (r.status || 'unknown'), 'bot');
   });
   history.replaceState({}, '', '/');
