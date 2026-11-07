@@ -43,6 +43,18 @@ cp .env.example .env
 
 To expose the demo publicly (for webhooks/remote judging), put the local server behind `ngrok http 8000` and set `APP_BASE_URL` to the https URL.
 
+## Run it locally
+
+1. Copy the env template and fill in your keys:
+   ```bash
+   cp .env.example .env
+   ```
+2. **PayPal (sandbox):** at [developer.paypal.com](https://developer.paypal.com) → *Apps & Credentials* → *Sandbox* → *Create App* (type **Merchant**). Copy the **Client ID** and **Secret** into `.env` as `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET`.
+3. **Gemini (chat):** add your key from [AI Studio](https://aistudio.google.com) as `GEMINI_API_KEY`.
+4. Start the server: `uvicorn main:app --port 8000` → open http://localhost:8000.
+
+> The app **boots without keys** — the UI, `/api/catalog` and `/api/config` (which reports `paypal_configured`) all work. PayPal actions (order create/approve/capture and order lookups) return a "PayPal not configured" error until the PayPal keys above are set in `.env`.
+
 ## Project structure
 
 ```

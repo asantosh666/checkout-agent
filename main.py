@@ -37,7 +37,7 @@ from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from agent import ShoppingAgent
-from paypal_client import PayPalClient, PayPalError
+from paypal_client import (NOT_CONFIGURED_MESSAGE, PayPalClient, PayPalError)
 
 load_dotenv()
 
@@ -75,7 +75,7 @@ def index():
 
 @app.get("/api/config")
 def config():
-    return {"sandbox": SANDBOX}
+    return {"sandbox": SANDBOX, "paypal_configured": paypal.configured}
 
 
 @app.get("/api/catalog")
@@ -113,6 +113,8 @@ def paypal_return(token: str = ""):
     """PayPal redirects here after the buyer approves. Capture the order."""
     if not token:
         return RedirectResponse("/?error=no_token")
+    if not paypal.configured:
+        return JSONResponse({"error": NOT_CONFIGURED_MESSAGE}, status_code=503)
     try:
         result = paypal.capture_order(token)
     except PayPalError as e:

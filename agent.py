@@ -55,8 +55,13 @@ class ShoppingAgent:
                  gemini_api_key: str, model: str = "gemini-2.5-flash"):
         self.paypal = paypal
         self.app_base_url = app_base_url.rstrip("/")
-        self.llm = ChatGoogleGenerativeAI(
-            model=model, google_api_key=gemini_api_key, temperature=0.4)
+        self._gemini_api_key = gemini_api_key
+        self._model = model
+        # The Gemini client is created lazily on first chat() call so the
+        # app can boot without a GEMINI_API_KEY (UI, catalog and config
+        # still work; chat fails cleanly only when actually attempted).
+        self.llm = None
+        self._llm_tools = None
 
         # -- tools (closures so they see self) --------------------------
         @tool
@@ -145,7 +150,17 @@ class ShoppingAgent:
         self._tools = [search_catalog, list_catalog, create_paypal_order,
                        check_order_status, capture_paypal_order]
         self._tool_map = {t.name: t for t in self._tools}
-        self._llm_tools = self.llm.bind_tools(self._tools)
+
+    def _ensure_llm(self):
+        """Create the Gemini client on first use; raises (cleanly, via the
+        /api/chat handler) only when chat is actually attempted without a key."""
+        if self._llm_tools is None:
+            self.llm = ChatGoogleGenerativeAI(
+                model=self._model,
+                google_api_key=self._gemini_api_key,
+                temperature=0.4)
+            self._llm_tools = self.llm.bind_tools(self._tools)
+        return self._llm_tools
 
     def chat(self, history: list, user_text: str,
              recent_orders: list | None = None) -> tuple[str, dict | None, list]:
@@ -159,8 +174,9 @@ class ShoppingAgent:
         messages = [SystemMessage(content=SYSTEM_PROMPT + ctx), *history,
                     HumanMessage(content=user_text)]
         order_info = None
+        llm_tools = self._ensure_llm()
         for _ in range(8):  # max tool rounds per turn
-            resp = self._llm_tools.invoke(messages)
+            resp = llm_tools.invoke(messages)
             messages.append(resp)
             if not resp.tool_calls:
                 break

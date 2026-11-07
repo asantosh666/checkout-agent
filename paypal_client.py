@@ -33,15 +33,29 @@ class PayPalError(Exception):
     pass
 
 
+NOT_CONFIGURED_MESSAGE = (
+    "PayPal not configured — add PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET to .env"
+)
+
+
 class PayPalClient:
     def __init__(self, client_id: str, secret: str, sandbox: bool = True):
-        if not client_id or not secret:
-            raise PayPalError("PayPal client_id/secret are required (see .env.example)")
-        self.client_id = client_id
-        self.secret = secret
+        # Missing keys are allowed at boot so the UI, catalog and config
+        # endpoints work without credentials; PayPal calls fail cleanly
+        # with NOT_CONFIGURED_MESSAGE only when actually attempted.
+        self.client_id = client_id or ""
+        self.secret = secret or ""
         self.base = SANDBOX_BASE if sandbox else LIVE_BASE
         self._token: str | None = None
         self._token_expires_at: float = 0.0
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.client_id and self.secret)
+
+    def _require_configured(self) -> None:
+        if not self.configured:
+            raise PayPalError(NOT_CONFIGURED_MESSAGE)
 
     # -- auth -----------------------------------------------------------
     def _auth_header(self) -> str:
@@ -49,6 +63,7 @@ class PayPalClient:
         return "Basic " + base64.b64encode(raw).decode()
 
     def access_token(self) -> str:
+        self._require_configured()
         # Cache the token; sandbox tokens last several hours.
         if self._token and time.time() < self._token_expires_at - 60:
             return self._token
@@ -80,6 +95,7 @@ class PayPalClient:
         items: [{"name": str, "unit_price": float, "quantity": int}]
         Returns the full order JSON.
         """
+        self._require_configured()
         total = sum(i["unit_price"] * i["quantity"] for i in items)
         total_str = f"{total:.2f}"
         paypal_items = [{
@@ -124,6 +140,7 @@ class PayPalClient:
         return None
 
     def get_order(self, order_id: str) -> dict:
+        self._require_configured()
         resp = httpx.get(f"{self.base}/v2/checkout/orders/{order_id}",
                          headers=self._headers(), timeout=20)
         if resp.status_code != 200:
@@ -132,6 +149,7 @@ class PayPalClient:
 
     def capture_order(self, order_id: str) -> dict:
         """APPROVED != paid. This call moves the money."""
+        self._require_configured()
         resp = httpx.post(f"{self.base}/v2/checkout/orders/{order_id}/capture",
                           headers=self._headers(), timeout=20)
         if resp.status_code not in (200, 201):
