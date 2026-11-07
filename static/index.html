@@ -161,6 +161,28 @@ function markOrderCaptured(orderId, r){
   const btn = box ? box.querySelector('a.btn') : null;
   if (btn) btn.style.display = 'none';
 }
+// The buyer may approve in a different browser/device, so no storage event
+// and no return navigation ever reaches this tab — without a re-check the
+// card would sit on "awaiting approval" forever. Re-check any still-pending
+// saved order whenever this tab regains focus, becomes visible again, or a
+// chat reply lands. Orders already marked captured are never re-fetched.
+let lastOrderPoll = 0;
+async function refreshOrderStatuses(){
+  const now = Date.now();
+  if (now - lastOrderPoll < 5000) return; // don't hammer on rapid focus flips
+  lastOrderPoll = now;
+  const pending = getSavedOrders().filter(o => !o.captured);
+  for (const o of pending) {
+    try {
+      const r = await fetch('/api/orders/' + o.order_id).then(r => r.json());
+      if (r.capture_id) setOrderCaptured(o.order_id, r);
+    } catch(e){ /* leave the card as-is; the next focus/reply retries */ }
+  }
+}
+window.addEventListener('focus', refreshOrderStatuses);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshOrderStatuses();
+});
 
 async function send(){
   const text = input.value.trim();
@@ -182,6 +204,7 @@ async function send(){
       localStorage.setItem('ca_session', sessionId);
       addMsg(data.reply, 'bot');
       if (data.order && data.order.approval_url) addPayBox(data.order);
+      refreshOrderStatuses();
     }
   } catch(e){ t.remove(); addMsg('Network error — is the server running?', 'bot'); }
   sendBtn.disabled = false;
@@ -259,6 +282,8 @@ if (q.get('receipt')) {
 } else {
   addMsg("Hi! I'm your AI shopping assistant. Tell me what you're looking for — e.g. “wireless earbuds under $60” — and I'll find it and check out with PayPal.", 'bot');
 }
+// A reloaded tab may hold a pending order that was captured elsewhere.
+refreshOrderStatuses();
 </script>
 </body>
 </html>
