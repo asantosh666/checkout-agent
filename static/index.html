@@ -165,24 +165,30 @@ function markOrderCaptured(orderId, r){
 // and no return navigation ever reaches this tab — without a re-check the
 // card would sit on "awaiting approval" forever. Re-check any still-pending
 // saved order whenever this tab regains focus, becomes visible again, or a
-// chat reply lands. Orders already marked captured are never re-fetched.
+// chat reply lands — AND on a short interval, because focus/visibility
+// events are unreliable triggers (the Nov 7 live re-test showed the card
+// still awaiting after two focus cycles and only flipping later). The
+// interval is the guarantee: worst case the card flips ~5s after capture,
+// with no user action at all. Ticks with no pending order cost one
+// localStorage read and no network.
 let lastOrderPoll = 0;
 async function refreshOrderStatuses(){
   const now = Date.now();
-  if (now - lastOrderPoll < 5000) return; // don't hammer on rapid focus flips
+  if (now - lastOrderPoll < 2000) return; // coalesce rapid focus bursts
   lastOrderPoll = now;
   const pending = getSavedOrders().filter(o => !o.captured);
   for (const o of pending) {
     try {
       const r = await fetch('/api/orders/' + o.order_id).then(r => r.json());
       if (r.capture_id) setOrderCaptured(o.order_id, r);
-    } catch(e){ /* leave the card as-is; the next focus/reply retries */ }
+    } catch(e){ /* leave the card as-is; the next tick retries */ }
   }
 }
 window.addEventListener('focus', refreshOrderStatuses);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refreshOrderStatuses();
 });
+setInterval(refreshOrderStatuses, 5000);
 
 async function send(){
   const text = input.value.trim();
